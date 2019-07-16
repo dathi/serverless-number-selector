@@ -1,0 +1,62 @@
+service: serverless-number-selector # NOTE: update this with your service name
+
+provider:
+  name: aws
+  runtime: nodejs10.x
+  stage: dev
+  region: us-east-1
+
+  iamRoleStatements:
+  - Effect: "Allow"
+    Action:
+      - "states:ListStateMachines"
+      - "states:StartExecution"
+    Resource: "arn:aws:states:*:*:*"
+
+functions:
+  positiveNumber:
+    handler: handler.positiveNumber
+  negativeNumber:
+    handler: handler.negativeNumber
+  executeStepFunction:
+    handler: handler.executeStepFunction
+    events:
+      - http:
+          path: init
+          method: get
+          
+stepFunctions:
+  stateMachines:
+    numberSelectorMachine:
+      name: "numberSelector"
+      definition:
+        Comment: "Select a number which > or < or = 0"
+        StartAt: InitState
+        States:
+          InitState:
+            Type: Choice
+            Choices:
+            - Variable: "$.value"
+              NumericGreaterThan: 0
+              Next: PositiveNumber
+            - Variable: "$.value"
+              NumericLessThan: 0
+              Next: NegativeNumber
+            Default: Zero
+          PositiveNumber:
+            Type: Task
+            Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-positiveNumber"
+            Next: FinalState
+          NegativeNumber:
+            Type: Task
+            Resource: "arn:aws:lambda:#{AWS::Region}:#{AWS::AccountId}:function:${self:service}-${opt:stage}-negativeNumber"
+            Next: FinalState
+          Zero:
+            Type: Fail
+            Cause: "It's a zero!"
+          FinalState:
+            Type: Succeed
+
+plugins:
+  - serverless-step-functions
+  - serverless-pseudo-parameters
